@@ -178,6 +178,7 @@ function ReadAloudPopup(props) {
 				<RemainingTime
 					minutesRemaining={minutesRemaining}
 					isQuotaExceeded={isQuotaExceeded}
+					isDailyLimitExceeded={error === 'daily-limit-exceeded'}
 					isQuotaLow={isQuotaLow}
 					switchTo={hasStandardMinutesRemaining ? 'standard' : 'local'}
 					devMode={devMode}
@@ -186,7 +187,10 @@ function ReadAloudPopup(props) {
 				/>
 			</>}
 			{error !== null && error !== 'quota-exceeded' && (
-				<ErrorMessage error={error} onRetry={() => manager.retry()}/>
+				<ErrorMessage
+					error={error}
+					onRetry={error === 'daily-limit-exceeded' ? null : () => manager.retry()}
+				/>
 			)}
 		</UtilityPopup>
 	);
@@ -424,14 +428,14 @@ function VoiceSelect(props) {
 function RemainingTime(props) {
 	const { l10n } = useLocalization();
 
-	let { minutesRemaining, isQuotaExceeded, isQuotaLow, switchTo, onPurchaseCredits, devMode, onResetCredits } = props;
+	let { minutesRemaining, isQuotaExceeded, isDailyLimitExceeded, isQuotaLow, switchTo, onPurchaseCredits, devMode, onResetCredits } = props;
 
 	let remainingFormatted = useMemo(
 		() => formatTimeRemaining(minutesRemaining),
 		[minutesRemaining]
 	);
 
-	if (remainingFormatted === null) {
+	if (remainingFormatted === null && !isQuotaExceeded) {
 		return null;
 	}
 
@@ -440,24 +444,24 @@ function RemainingTime(props) {
 			className="row remaining-time"
 			aria-label={l10n.getString('reader-read-aloud-remaining-time')}
 		>
-			<div className={cx('time-indicator', { urgent: isQuotaLow })}>
-				<IconClock/>
-				{devMode
-					? <button className="reset" onClick={onResetCredits}>{remainingFormatted}</button>
-					: remainingFormatted}
-				{!isQuotaExceeded && (
-					<button className="purchase-credits" onClick={onPurchaseCredits}>
-						{l10n.getString('reader-read-aloud-add-more-time')}
-					</button>
-				)}
-			</div>
-			{isQuotaExceeded && (
-				<Localized id="reader-read-aloud-quota-exceeded-message" elems={{
+			{isQuotaExceeded
+				? <Localized id="reader-read-aloud-quota-exceeded-message" elems={{
 					'add-more-time': <button onClick={onPurchaseCredits}/>,
 				}} vars={{ tier: switchTo }}>
 					<div className="message"/>
 				</Localized>
-			)}
+				: <div className={cx('time-indicator', { urgent: isQuotaLow })}>
+					<IconClock/>
+					{devMode
+						? <button className="reset" onClick={onResetCredits}>{remainingFormatted}</button>
+						: remainingFormatted}
+					{!isDailyLimitExceeded && (
+						<button className="purchase-credits" onClick={onPurchaseCredits}>
+							{l10n.getString('reader-read-aloud-add-more-time')}
+						</button>
+					)}
+				</div>
+			}
 		</div>
 	);
 }
@@ -467,12 +471,21 @@ function ErrorMessage(props) {
 
 	let { error, onRetry } = props;
 
+	let args;
+	if (error === 'daily-limit-exceeded') {
+		// The daily limit resets at midnight UTC
+		let resetTime = new Date();
+		resetTime.setUTCHours(24, 0, 0, 0);
+		let time = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(resetTime);
+		args = { time };
+	}
+
 	return (
 		<div
 			className="row error"
 			aria-label={l10n.getString('reader-read-aloud-error')}
 		>
-			{l10n.getString(`reader-read-aloud-error-${error}`)}
+			{l10n.getString(`reader-read-aloud-error-${error}`, args)}
 			{onRetry && (
 				<button onClick={onRetry}>{l10n.getString('reader-read-aloud-retry')}</button>
 			)}
